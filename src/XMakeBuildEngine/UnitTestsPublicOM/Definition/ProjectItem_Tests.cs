@@ -12,6 +12,7 @@ using System.Linq;
 using System.Xml;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
+using Microsoft.Build.Shared;
 using InvalidProjectFileException = Microsoft.Build.Exceptions.InvalidProjectFileException;
 using Xunit;
 
@@ -1441,8 +1442,8 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             }
            );
         }
-
-        //  TODO: Should remove tests go in project item tests, project item instance tests, or both?
+		
+		//  TODO: Should remove tests go in project item tests, project item instance tests, or both?
         [Fact]
         public void Remove()
         {
@@ -1480,25 +1481,252 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             Assert.Equal(@"a;c", string.Join(";", items.Select(i => i.EvaluatedInclude))); ;
         }
 
+        [Fact]
+        public void UpdateMetadataShouldAddOrReplace()
+        {
+            string content = @"<i Include='a;b'>
+                                  <m1>m1_contents</m1>
+                                  <m2>m2_contents</m2>
+                                  <m3>m3_contents</m3>
+                              </i>
+                              <i Update='a'>
+                                  <m1>updated</m1>
+                                  <m2></m2>
+                                  <m4>added</m4>
+                              </i>";
+
+            IList<ProjectItem> items = GetItemsFromFragment(content);
+
+            AssertItemHasMetadata(
+                new Dictionary<string, string>
+                {
+                    {"m1", "updated"},
+                    {"m2", ""},
+                    {"m3", "m3_contents"},
+                    {"m4", "added"}
+                }
+                , items[0]);
+
+            AssertItemHasMetadata(
+                new Dictionary<string, string>
+                {
+                    {"m1", "m1_contents"},
+                    {"m2", "m2_contents"},
+                    {"m3", "m3_contents"}
+                }
+                , items[1]);
+        }
+
+        /// <summary>
+        /// Project evaluation is a design time evaluation. Conditions are ignored
+        /// </summary>
+        [Fact]
+        public void UpdateShouldNotRespectConditions()
+        {
+            string content = @"<i Include='a;b'>
+                                  <m1>m1_contents</m1>
+                              </i>
+                              <i Update='a' Condition='1 == 1'>
+                                  <m1>from_true</m1>
+                              </i>
+                              <i Update='b' Condition='1 == 0'>
+                                  <m1>from_false</m1>
+                              </i>";
+
+            IList<ProjectItem> items = GetItemsFromFragment(content);
+
+            var expectedInitial = new Dictionary<string, string>
+            {
+                {"m1", "m1_contents"}
+            };
+
+            var expectedUpdateFromTrue = new Dictionary<string, string>
+            {
+                {"m1", "from_true"}
+            };
+
+            var expectedUpdateFromFalse = new Dictionary<string, string>
+            {
+                {"m1", "from_false"}
+            };
+
+            AssertItemHasMetadata(expectedUpdateFromTrue, items[0]);
+            AssertItemHasMetadata(expectedUpdateFromFalse, items[1]);
+        }
+
+        [Fact]
+        public void LastUpdateWins()
+        {
+            string content = @"<i Include='a'>
+                                  <m1>m1_contents</m1>
+                              </i>
+                              <i Update='a'>
+                                  <m1>first</m1>
+                              </i>
+                              <i Update='a'>
+                                  <m1>second</m1>
+                              </i>";
+
+            IList<ProjectItem> items = GetItemsFromFragment(content);
+
+            var expectedUpdate = new Dictionary<string, string>
+            {
+                {"m1", "second"}
+            };
+
+            AssertItemHasMetadata(expectedUpdate, items[0]);
+        }
+
+        [Fact]
+        public void UpdateWithNoMetadataShouldNotAffectItems()
+        {
+            string content = @"<i Include='a;b'>
+                                  <m1>m1_contents</m1>
+                                  <m2>m2_contents</m2>
+                                  <m3>m3_contents</m3>
+                              </i>
+                              <i Update='a'>
+                              </i>";
+
+            IList<ProjectItem> items = GetItemsFromFragment(content);
+
+            var expectedMetadata = new Dictionary<string, string>
+            {
+                {"m1", "m1_contents"},
+                {"m2", "m2_contents"},
+                {"m3", "m3_contents"}
+            };
+
+            Assert.Equal(2, items.Count);
+
+            AssertItemHasMetadata(expectedMetadata, items[0]);
+            AssertItemHasMetadata(expectedMetadata, items[1]);
+        }
+
+        [Fact]
+        public void UpdateOnNonExistingItemShouldDoNothing()
+        {
+            string content = @"<i Include='a;b'>
+                                  <m1>m1_contents</m1>
+                                  <m2>m2_contents</m2>
+                              </i>
+                              <i Update='c'>
+                                  <m1>updated</m1>
+                                  <m2></m2>
+                                  <m3>added</m3>
+                              </i>";
+
+            IList<ProjectItem> items = GetItemsFromFragment(content);
+
+            Assert.Equal(2, items.Count);
+
+            var expectedMetadata = new Dictionary<string, string>
+            {
+                {"m1", "m1_contents"},
+                {"m2", "m2_contents"},
+            };
+
+            AssertItemHasMetadata(expectedMetadata, items[0]);
+            AssertItemHasMetadata(expectedMetadata, items[1]);
+        }
+
+        [Fact]
+        public void UpdateOnEmptyStringShouldThrow()
+        {
+            string content = @"<i Include='a;b'>
+                                  <m1>m1_contents</m1>
+                                  <m2>m2_contents</m2>
+                              </i>
+                              <i Update=''>
+                                  <m1>updated</m1>
+                                  <m2></m2>
+                                  <m3>added</m3>
+                              </i>";
+
+            var exception = Assert.Throws<InvalidProjectFileException>(() =>
+            {
+                IList<ProjectItem> items = GetItemsFromFragment(content);
+            });
+
+            Assert.Equal("The required attribute \"Update\" is empty or missing from the element <i>.", exception.Message);
+        }
+
+        [Fact]
+        public void UpdateShouldBeAbleToContainGlobs()
+        {
+            string rootDir = null;
+
+            try
+            {
+                var content = @"<i Include='*.foo'>
+                                    <m1>m1_contents</m1>
+                                    <m2>m2_contents</m2>
+                                </i>
+                                <i Update='*bar*foo'>
+                                    <m1>updated</m1>
+                                    <m2></m2>
+                                    <m3>added</m3>
+                                </i>";
+
+                var items = GetItemsFromFragmentWithGlobs(out rootDir, content, "a.foo", "b.foo", "bar1.foo", "bar2.foo");
+
+                Assert.Equal(4, items.Count);
+
+                var expectedInitialMetadata = new Dictionary<string, string>
+                {
+                    {"m1", "m1_contents"},
+                    {"m2", "m2_contents"},
+                };
+
+                var expectedUpdatedMetadata = new Dictionary<string, string>
+                {
+                    {"m1", "updated"},
+                    {"m2", ""},
+                    {"m3", "added"},
+                };
+
+                AssertItemHasMetadata(expectedInitialMetadata, items[0]);
+                AssertItemHasMetadata(expectedInitialMetadata, items[1]);
+                AssertItemHasMetadata(expectedUpdatedMetadata, items[2]);
+                AssertItemHasMetadata(expectedUpdatedMetadata, items[3]);
+            }
+            finally
+            {
+                ObjectModelHelpers.DeleteDirectory(rootDir);
+            }
+        }
+
+        private static List<ProjectItem> GetItemsFromFragmentWithGlobs(out string rootDir, string itemGroupFragment, params string[] globFiles)
+        {
+            var projectFile = ObjectModelHelpers.CreateFileInTempProjectDirectory($"{Guid.NewGuid()}.proj", FormatProjectContentsWithItemGroupFragment(itemGroupFragment));
+            rootDir = Path.GetDirectoryName(projectFile);
+
+            Helpers.CreateFilesInDirectory(ref rootDir, globFiles);
+
+            return Helpers.MakeList(new Project(projectFile).GetItems("i"));
+        }
+
         /// <summary>
         /// Get items of item type "i" with using the item xml fragment passed in
         /// </summary>
         private static IList<ProjectItem> GetItemsFromFragment(string fragment)
         {
-            string content = String.Format
-                (
-                @"
-                    <Project xmlns='http://schemas.microsoft.com/developer/msbuild/2003' >
-                        <ItemGroup>
-                            {0}
-                        </ItemGroup>
-                    </Project>
-                ",
-                 fragment
-                 );
+            string content = FormatProjectContentsWithItemGroupFragment(fragment);
 
             IList<ProjectItem> items = GetItems(content);
             return items;
+        }
+
+        private static string FormatProjectContentsWithItemGroupFragment(string fragment)
+        {
+            return
+                $@"
+                    <Project xmlns='http://schemas.microsoft.com/developer/msbuild/2003' >
+                        <ItemGroup>
+                            {fragment}
+                        </ItemGroup>
+                    </Project>
+                ";
         }
 
         /// <summary>
@@ -1545,6 +1773,16 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             for (int i = 0; i < includes.Length; i++)
             {
                 Assert.Equal(includes[i], items[i].EvaluatedInclude);
+            }
+        }
+
+        private static void AssertItemHasMetadata(Dictionary<string, string> expected, ProjectItem item)
+        {
+            Assert.Equal(expected.Keys.Count, item.DirectMetadataCount);
+
+            foreach (var key in expected.Keys)
+            {
+                Assert.Equal(expected[key], item.GetMetadataValue(key));
             }
         }
     }

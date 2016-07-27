@@ -764,6 +764,54 @@ namespace Microsoft.Build.UnitTests.OM.Construction
             Helpers.VerifyAssertProjectContent(expected, project);
         }
 
+        [Fact]
+        public void AddItemWithUpdateAtSpecificLocation()
+        {
+            var project = ProjectRootElement.Create();
+            var itemGroup = project.CreateItemGroupElement();
+            var firstIncludeItem = project.CreateItemElement("i");
+            var secondIncludeItem = project.CreateItemElement("i");
+            var firstUpdateItem = project.CreateItemElement("i");
+            var secondUpdateItem = project.CreateItemElement("i");
+            var firstMetadata = project.CreateMetadataElement("m1");
+            var secondMetadata = project.CreateMetadataElement("m1");
+
+            firstIncludeItem.Include = "a";
+            secondIncludeItem.Include = "a";
+            firstUpdateItem.Update = "a";
+            secondUpdateItem.Update = "a";
+            firstMetadata.Value = "metadata1";
+            secondMetadata.Value = "metadata2";
+
+            project.AppendChild(itemGroup);
+            itemGroup.AppendChild(firstIncludeItem);
+            itemGroup.AppendChild(secondIncludeItem);
+
+            // add update between two include items
+            itemGroup.InsertAfterChild(firstUpdateItem, firstIncludeItem);
+            firstUpdateItem.AppendChild(firstMetadata);
+
+            // add update as the last child
+            itemGroup.AppendChild(secondUpdateItem);
+            secondUpdateItem.AppendChild(secondMetadata);
+
+            string expected = ObjectModelHelpers.CleanupFileContents(
+@"<Project ToolsVersion=""msbuilddefaulttoolsversion"" xmlns=""msbuildnamespace"">
+  <ItemGroup>
+    <i Include=""a"" />
+    <i Update=""a"">
+      <m1>metadata1</m1>
+    </i>
+    <i Include=""a"" />
+    <i Update=""a"">
+      <m1>metadata2</m1>
+    </i>
+  </ItemGroup>
+</Project>");
+
+            Helpers.VerifyAssertProjectContent(expected, project);
+        }
+
         /// <summary>
         /// Remove a target
         /// </summary>
