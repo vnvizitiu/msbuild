@@ -58,7 +58,23 @@ namespace Microsoft.Build.Construction
         /// <summary>
         /// A known list of target names to create.  This is for backwards compatibility.
         /// </summary>
-        private readonly ISet<string> _knownTargetNames = ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase, "Build", "Clean", "Rebuild", "Publish");
+        private static readonly ISet<string> _defaultTargetNames = ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase,
+            "Build",
+            "Clean",
+            "Rebuild",
+            "Publish"
+            );
+
+        /// <summary>
+        /// Internal implementation targets that can't be used by users
+        /// </summary>
+        private static readonly ISet<string> _illegaUserTargetNames = ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase,
+            "ValidateSolutionConfiguration",
+            "ValidateToolsVersions",
+            "ValidateProjects",
+            "GetSolutionConfigurationContents",
+            "GetFrameworkPathAndRedistList"
+            ).Union(_defaultTargetNames);
 
         /// <summary>
         /// Version 2.0
@@ -160,9 +176,9 @@ namespace Microsoft.Build.Construction
             var userTargets =
                 targetNames.Select(i => i.Split(new[] {':'}, 2, StringSplitOptions.RemoveEmptyEntries).Last())
                     // The known target names are also removed from the list in case something like /t:Build was specified it is just ignored
-                    .Except(_knownTargetNames, StringComparer.OrdinalIgnoreCase)
+                    .Except(_illegaUserTargetNames, StringComparer.OrdinalIgnoreCase)
                     // Ignore targets that have the same name as projects, since their meaning is special. Whatever else remains, it must be a user target (e.g. the MyBuild target)
-                    .Except(projectNames).ToList();
+                    .Except(projectNames, StringComparer.OrdinalIgnoreCase).ToList();
 
             return userTargets;
         }
@@ -881,7 +897,7 @@ namespace Microsoft.Build.Construction
             // These are just dummies necessary to make the evaluation into a project instance succeed when 
             // any custom imported targets have declarations like BeforeTargets="Build"
             // They'll be replaced momentarily with the real ones.
-            foreach (string targetName in _knownTargetNames.Union(_targetNames))
+            foreach (string targetName in _defaultTargetNames.Union(_targetNames))
             {
                 traversalProject.AddTarget(targetName);
             }
@@ -906,7 +922,7 @@ namespace Microsoft.Build.Construction
                 );
 
             // Make way for the real ones                
-            foreach (string targetName in _knownTargetNames.Union(_targetNames))
+            foreach (string targetName in _defaultTargetNames.Union(_targetNames))
             {
                 traversalInstance.RemoveTarget(targetName);
             }
