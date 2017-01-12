@@ -146,14 +146,25 @@ namespace Microsoft.Build.Construction
 
             if (targetNames != null)
             {
-                // Special target names are generated for each project like My_Project:Clean.  If the user specified a value like
-                // that then we need to split by the first colon and assume the rest is a real target name.  This works unless the
-                // target has a colon in it and the user is not trying to run it in a specific project.  At the time of writing this
-                // we figured it unlikely that a target name would have a colon in it...
-
-                // The known target names are also removed from the list in case something like /t:Build was specified it is just ignored
-                _targetNames = targetNames.Select(i => i.Split(new[] { ':' }, 2, StringSplitOptions.RemoveEmptyEntries).Last()).Except(_knownTargetNames, StringComparer.OrdinalIgnoreCase).ToList();
+                _targetNames = GetUserTargets(targetNames, solution.ProjectsInOrder.Select(_ => _.ProjectName));
             }
+        }
+
+        private List<string> GetUserTargets(IReadOnlyCollection<string> targetNames, IEnumerable<string> projectNames)
+        {
+            // Special target names are generated for each project like My_Project:Clean.  If the user specified a value like
+            // that then we need to split by the first colon and assume the rest is a real target name.  This works unless the
+            // target has a colon in it and the user is not trying to run it in a specific project.  At the time of writing this
+            // we figured it unlikely that a target name would have a colon in it...
+
+            var userTargets =
+                targetNames.Select(i => i.Split(new[] {':'}, 2, StringSplitOptions.RemoveEmptyEntries).Last())
+                    // The known target names are also removed from the list in case something like /t:Build was specified it is just ignored
+                    .Except(_knownTargetNames, StringComparer.OrdinalIgnoreCase)
+                    // Ignore targets that have the same name as projects, since their meaning is special. Whatever else remains, it must be a user target (e.g. the Foo target)
+                    .Except(projectNames).ToList();
+
+            return userTargets;
         }
 
         #endregion // Constructors
