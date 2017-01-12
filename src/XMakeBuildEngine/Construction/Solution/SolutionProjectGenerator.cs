@@ -161,7 +161,7 @@ namespace Microsoft.Build.Construction
                 targetNames.Select(i => i.Split(new[] {':'}, 2, StringSplitOptions.RemoveEmptyEntries).Last())
                     // The known target names are also removed from the list in case something like /t:Build was specified it is just ignored
                     .Except(_knownTargetNames, StringComparer.OrdinalIgnoreCase)
-                    // Ignore targets that have the same name as projects, since their meaning is special. Whatever else remains, it must be a user target (e.g. the Foo target)
+                    // Ignore targets that have the same name as projects, since their meaning is special. Whatever else remains, it must be a user target (e.g. the MyBuild target)
                     .Except(projectNames).ToList();
 
             return userTargets;
