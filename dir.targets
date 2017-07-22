@@ -130,6 +130,43 @@
       <VSDesignTimeBuild Condition="'$(BuildingInsideVisualStudio)'=='true' and '$(BuildingOutOfProcess)'=='false'">true</VSDesignTimeBuild>
     </PropertyGroup>
   </Target>
-  
+
+  <!-- We want this target to be incremental, but editbin affects the file in place, as does
+       OpenSourceSign. So run this target when the assembly has been updated since the last
+       time it was signed. Signing will run immediately after this, flipping another bit and
+       dropping the marker file. -->
+  <Target Name="EditBin"
+          AfterTargets="CoreCompile"
+          BeforeTargets="OpenSourceSign"
+          Inputs="@(IntermediateAssembly)"
+          Outputs="@(IntermediateAssembly->'%(Identity).oss_signed')"
+          Condition="'$(FullFrameworkBuild)' == 'true' and '$(PlatformTarget)' == 'x86'">
+    <PropertyGroup>
+      <!-- Native equivalent is /LARGEADDRESSAWARE on the linker -->
+      <EditBinFlags Condition="'$(LargeAddressAware)'=='true'">$(EditBinFlags) /LARGEADDRESSAWARE</EditBinFlags>
+
+      <!-- Don't require all developers to install C++ tools just to
+           get editbin.exe -->
+      <EditBinContinueOnError>WarnAndContinue</EditBinContinueOnError>
+      <!-- But DO fail the build on CI and official builds if we can't
+           produce the right outputs. Continuing on error to allow
+           test results even on a misconfigured build machine. -->
+      <EditBinContinueOnError Condition="'$(TF_BUILD)' == 'True' or '$(JENKINS_URL)' != ''">ErrorAndContinue</EditBinContinueOnError>
+
+      <!--
+        * VSINSTALLDIR is set by the Developer Command Prompt. When building from MicroBuild, this isn't set.
+        * VsInstallRoot is discovered by MSBuild, but in our bootstrapped build it's wrong (VS isn't installed
+          to our 'bin' folder). When building from MicroBuild (or any installed VS), this value is correct.
+      -->
+      <EditBinCommand Condition="'$(VSINSTALLDIR)' != ''">call &quot;$(VSINSTALLDIR)\Common7\Tools\VsDevCmd.bat&quot; &amp;&amp; editbin.exe /NOLOGO $(EditBinFlags) @(IntermediateAssembly)</EditBinCommand>
+      <EditBinCommand Condition="'$(VsInstallRoot)' != '' and '$(EditBinCommand)' == ''">call &quot;$(VsInstallRoot)\Common7\Tools\VsDevCmd.bat&quot; &amp;&amp; editbin.exe /NOLOGO $(EditBinFlags) @(IntermediateAssembly)</EditBinCommand>
+    </PropertyGroup>
+
+    <Exec Condition="'$(EditBinFlags)'!=''"
+          Command="$(EditBinCommand)"
+          ContinueOnError="$(EditBinContinueOnError)" />
+
+  </Target>
+
   <Import Project="$(NuGetConfigDir)\packageLoad.targets" />
 </Project>

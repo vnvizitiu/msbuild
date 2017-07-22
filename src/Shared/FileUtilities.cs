@@ -611,7 +611,7 @@ namespace Microsoft.Build.Shared
             return fullPath;
         }
 
-        private static bool PathIsInvalid(string path)
+        internal static bool PathIsInvalid(string path)
         {
             if (path.IndexOfAny(InvalidPathChars) >= 0)
             {
@@ -881,6 +881,11 @@ namespace Microsoft.Build.Shared
         internal static bool IsMetaprojectFilename(string filename)
         {
             return (String.Equals(Path.GetExtension(filename), ".metaproj", PathComparison));
+        }
+
+        internal static bool IsBinaryLogFilename(string filename)
+        {
+            return (String.Equals(Path.GetExtension(filename), ".binlog", PathComparison));
         }
 
         /// <summary>
